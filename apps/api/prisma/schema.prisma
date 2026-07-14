@@ -1,0 +1,349 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ATENDENTE
+  COZINHA
+  ENTREGADOR
+}
+
+enum ConversationState {
+  INICIO
+  ESCOLHENDO_CATEGORIA
+  ESCOLHENDO_PRODUTO
+  ESCOLHENDO_QUANTIDADE
+  ESCOLHENDO_ADICIONAIS
+  RESUMO
+  AGUARDANDO_ENDERECO
+  AGUARDANDO_LOCALIZACAO
+  AGUARDANDO_PAGAMENTO
+  PAGO
+  EM_PREPARO
+  PRONTO
+  SAIU_ENTREGA
+  FINALIZADO
+  CANCELADO
+}
+
+enum OrderStatus {
+  NOVO
+  PAGO
+  PREPARANDO
+  PRONTO
+  SAIU_ENTREGA
+  ENTREGUE
+  CANCELADO
+}
+
+enum OrderType {
+  ENTREGA
+  RETIRADA
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+  CANCELLED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  AUDIO
+  IMAGE
+  DOCUMENT
+  LOCATION
+  STATUS
+  SYSTEM
+}
+
+enum PaymentGatewayType {
+  MERCADO_PAGO
+  ASAAS
+  EFI
+  PAGSEGURO
+  MANUAL
+}
+
+enum DiscountType {
+  PERCENTUAL
+  FIXO
+}
+
+model Usuario {
+  id           String    @id @default(cuid())
+  nome         String
+  email        String    @unique
+  senhaHash    String
+  role         UserRole   @default(ADMIN)
+  ativo        Boolean    @default(true)
+  ultimoLoginAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("usuarios")
+}
+
+model Cliente {
+  id         String     @id @default(cuid())
+  nome       String
+  telefone   String     @unique
+  email      String?
+  documento  String?
+  ativo      Boolean    @default(true)
+  metadata   Json?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  enderecos  Endereco[]
+  conversas  Conversa[]
+  mensagens  Mensagem[]
+  pedidos    Pedido[]
+
+  @@map("clientes")
+}
+
+model Endereco {
+  id           String   @id @default(cuid())
+  clienteId    String
+  apelido      String?
+  logradouro   String
+  numero       String
+  complemento  String?
+  bairro       String
+  cidade       String
+  estado       String
+  cep          String
+  referencia   String?
+  latitude     Float?
+  longitude    Float?
+  principal    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  pedidos      Pedido[]
+
+  @@index([clienteId])
+  @@map("enderecos")
+}
+
+model Categoria {
+  id          String    @id @default(cuid())
+  nome        String    @unique
+  descricao   String?
+  ativo       Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  produtos    Produto[]
+
+  @@index([ativo])
+  @@map("categorias")
+}
+
+model Produto {
+  id             String    @id @default(cuid())
+  nome           String    @unique
+  descricao      String?
+  categoriaId    String
+  preco          Decimal   @db.Decimal(10, 2)
+  foto           String?
+  ativo          Boolean   @default(true)
+  estoque        Int       @default(0)
+  tempoPreparo   Int       @default(0)
+  ordemExibicao   Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  categoria      Categoria @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  itens          PedidoItem[]
+
+  @@index([categoriaId])
+  @@index([ativo])
+  @@map("produtos")
+}
+
+model Pedido {
+  id                   String           @id @default(cuid())
+  codigo               String           @unique
+  clienteId            String
+  enderecoId           String?
+  conversaId           String?          @unique
+  cupomId              String?
+  status               OrderStatus      @default(NOVO)
+  tipo                 OrderType        @default(ENTREGA)
+  origem               String           @default("WHATSAPP")
+  observacoes          String?
+  tempoEstimadoMinutos Int?
+  total                Decimal          @db.Decimal(10, 2)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  cliente              Cliente          @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  endereco             Endereco?        @relation(fields: [enderecoId], references: [id], onDelete: SetNull)
+  conversa             Conversa?        @relation("ConversationOrder", fields: [conversaId], references: [id], onDelete: SetNull)
+  cupom                Cupom?           @relation(fields: [cupomId], references: [id], onDelete: SetNull)
+  itens                PedidoItem[]
+  pagamentos           Pagamento[]
+  historicoStatus      HistoricoStatus[]
+
+  @@index([clienteId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("pedidos")
+}
+
+model PedidoItem {
+  id            String   @id @default(cuid())
+  pedidoId      String
+  produtoId     String
+  quantidade    Int
+  precoUnitario Decimal  @db.Decimal(10, 2)
+  subtotal      Decimal  @db.Decimal(10, 2)
+  observacoes   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  pedido        Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produto       Produto  @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+
+  @@index([pedidoId])
+  @@index([produtoId])
+  @@map("pedido_itens")
+}
+
+model Pagamento {
+  id           String          @id @default(cuid())
+  pedidoId     String
+  gateway      PaymentGatewayType
+  status       PaymentStatus   @default(PENDING)
+  externalId   String?
+  valor        Decimal         @db.Decimal(10, 2)
+  payload      Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  pedido       Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  @@index([pedidoId])
+  @@index([status])
+  @@map("pagamentos")
+}
+
+model Entregador {
+  id          String    @id @default(cuid())
+  nome        String
+  telefone    String    @unique
+  ativo       Boolean   @default(true)
+  veiculo     String?
+  latitude    Float?
+  longitude   Float?
+  usuarioId   String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("entregadores")
+}
+
+model Configuracao {
+  id          String   @id @default(cuid())
+  chave       String   @unique
+  valor       Json
+  descricao   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("configuracoes")
+}
+
+model HistoricoStatus {
+  id          String      @id @default(cuid())
+  pedidoId    String
+  status      OrderStatus
+  observacao  String?
+  createdAt   DateTime    @default(now())
+  pedido      Pedido      @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  @@index([pedidoId])
+  @@index([status])
+  @@map("historico_status")
+}
+
+model Mensagem {
+  id           String           @id @default(cuid())
+  conversaId   String
+  clienteId    String?
+  tipo         MessageType      @default(TEXT)
+  direcao      MessageDirection @default(INBOUND)
+  conteudo     String?
+  mediaUrl     String?
+  rawPayload   Json?
+  externalId   String?
+  createdAt    DateTime         @default(now())
+  conversa     Conversa         @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  cliente      Cliente?         @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+
+  @@index([conversaId])
+  @@index([clienteId])
+  @@map("mensagens")
+}
+
+model Conversa {
+  id              String           @id @default(cuid())
+  clienteId       String
+  estado          ConversationState @default(INICIO)
+  ultimaPergunta  String?
+  contexto        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  cliente        Cliente          @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  pedido         Pedido?          @relation("ConversationOrder")
+  mensagens      Mensagem[]
+
+  @@index([clienteId])
+  @@index([estado])
+  @@map("conversas")
+}
+
+model Cupom {
+  id             String       @id @default(cuid())
+  codigo         String       @unique
+  descricao      String?
+  tipoDesconto   DiscountType
+  valor          Decimal      @db.Decimal(10, 2)
+  valorMinimo    Decimal?     @db.Decimal(10, 2)
+  limiteUso      Int?
+  usos           Int          @default(0)
+  validadeInicio DateTime?
+  validadeFim    DateTime?
+  ativo          Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  pedidos        Pedido[]
+
+  @@index([ativo])
+  @@map("cupoms")
+}
+
+model TaxaEntrega {
+  id                   String   @id @default(cuid())
+  nome                 String
+  bairro               String?
+  cepInicial           String?
+  cepFinal             String?
+  valor                Decimal  @db.Decimal(10, 2)
+  tempoEstimadoMinutos Int?
+  ativo                Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([ativo])
+  @@map("taxas_entrega")
+}
