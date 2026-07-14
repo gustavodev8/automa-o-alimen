@@ -1,0 +1,77 @@
+services:
+  evolution-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5433:5432'
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d evolution']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution-redis:
+    image: redis:7-alpine
+    ports:
+      - '6380:6379'
+    command: ['redis-server', '--port', '6379', '--appendonly', 'yes']
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    ports:
+      - '8081:8080'
+    environment:
+      AUTHENTICATION_API_KEY: change-me
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:8081
+      DATABASE_ENABLED: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://postgres:postgres@evolution-postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_local
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: 'true'
+      WEBHOOK_GLOBAL_ENABLED: 'true'
+      WEBHOOK_GLOBAL_URL: http://host.docker.internal:3001/api/v1/webhooks/evolution/webhook
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: 'false'
+      WEBHOOK_EVENTS_APPLICATION_STARTUP: 'true'
+      WEBHOOK_EVENTS_QRCODE_UPDATED: 'true'
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: 'true'
+      WEBHOOK_EVENTS_MESSAGES_UPDATE: 'true'
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: 'true'
+      WEBHOOK_EVENTS_ERRORS_WEBHOOK: 'true'
+      CONFIG_SESSION_PHONE_CLIENT: Lanchonete Central
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: '30'
+      QRCODE_COLOR: '#175197'
+      LANGUAGE: pt-BR
+    volumes:
+      - evolution_instances:/evolution/instances
+
+volumes:
+  evolution_postgres_data:
+  evolution_redis_data:
+  evolution_instances:

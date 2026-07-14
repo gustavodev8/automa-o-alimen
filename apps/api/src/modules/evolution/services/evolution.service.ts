@@ -23,18 +23,26 @@ export class EvolutionService {
   }
 
   async sendTextMessage(message: EvolutionTextMessage) {
-    const response = await fetch(`${this.baseUrl}/message/sendText`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({
-        number: message.to,
-        text: message.text,
-      }),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/message/sendText/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          number: message.to,
+          text: message.text,
+          textMessage: {
+            text: message.text,
+          },
+        }),
+      },
+    );
 
     if (!response.ok) {
+      const responseBody = await response.text();
       throw new AppError('Evolution API request failed', 502, 'EVOLUTION_REQUEST_FAILED', {
         status: response.status,
+        body: responseBody,
       });
     }
 
@@ -42,20 +50,31 @@ export class EvolutionService {
   }
 
   async sendImage(to: string, imageUrl: string, caption?: string) {
-    const response = await fetch(`${this.baseUrl}/message/sendMedia`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({
-        number: to,
-        mediatype: 'image',
-        media: imageUrl,
-        caption,
-      }),
-    });
+    const form = new FormData();
+    const headers = env.EVOLUTION_API_KEY ? { apikey: env.EVOLUTION_API_KEY } : {};
+
+    form.append('number', to);
+    form.append('mediatype', 'image');
+    form.append('media', imageUrl);
+
+    if (caption) {
+      form.append('caption', caption);
+    }
+
+    const response = await fetch(
+      `${this.baseUrl}/message/sendMedia/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
+      {
+        method: 'POST',
+        headers,
+        body: form,
+      },
+    );
 
     if (!response.ok) {
+      const responseBody = await response.text();
       throw new AppError('Evolution API request failed', 502, 'EVOLUTION_REQUEST_FAILED', {
         status: response.status,
+        body: responseBody,
       });
     }
 

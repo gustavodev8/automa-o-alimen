@@ -25,13 +25,13 @@ npm install
 2. Configure o ambiente
 
 ```bash
-copy .env.example .env
+Copy-Item .env.example .env
 ```
 
 3. Gere o Prisma Client
 
 ```bash
-npm run prisma:generate -w apps/api
+npm run db:generate
 ```
 
 4. Rode as migrations e o seed
@@ -47,6 +47,25 @@ npm run db:seed
 npm run dev
 ```
 
+## Modo de teste local
+
+Para testar sem VPS, suba a Evolution local junto com o banco dela:
+
+```bash
+npm run evolution:up
+```
+
+Depois:
+
+1. Suba o banco do app com `docker compose up -d postgres redis`.
+2. Rode `npm run db:migrate` e `npm run db:seed`.
+3. Inicie a API e o painel com `npm run dev`.
+4. Abra a Evolution em `http://localhost:8081`.
+5. Crie ou conecte a instancia `lanchonete`.
+6. Escaneie o QR code com o WhatsApp do numero que vai testar.
+
+A webhook global ja vem apontada para a API local em `http://host.docker.internal:3001/api/v1/webhooks/evolution/webhook`, entao nao precisa de VPS nem de tunel publico nessa fase. A Evolution local sobe em `http://localhost:8081`.
+
 ## Acesso inicial
 
 - Painel web: `http://localhost:3000`
@@ -57,6 +76,20 @@ npm run dev
 
 - Email: `admin@lanchonete.local`
 - Senha: `Admin@12345`
+
+## Onde conectar o numero
+
+Se a instancia ainda nao existir, crie uma vez com `POST http://localhost:8081/instance/create` e este corpo:
+
+```json
+{
+  "instanceName": "lanchonete",
+  "qrcode": true,
+  "integration": "WHATSAPP-BAILEYS"
+}
+```
+
+Depois disso, abra `GET http://localhost:8081/instance/connect/lanchonete` com a header `apikey: change-me`. A resposta traz o QR code em `base64`. Depois de conectar, as mensagens chegam no webhook da API automaticamente.
 
 ## Banco
 

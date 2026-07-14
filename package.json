@@ -10,13 +10,17 @@
     "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
     "lint": "eslint .",
     "format": "prettier . --write",
-    "db:generate": "npm run prisma:generate -w apps/api",
-    "db:migrate": "npm run prisma:migrate -w apps/api",
-    "db:seed": "npm run db:seed -w apps/api"
+    "db:generate": "npm run db:generate -w apps/api",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "evolution:up": "docker compose -f docker-compose.evolution.yml up -d",
+    "evolution:down": "docker compose -f docker-compose.evolution.yml down",
+    "evolution:logs": "docker compose -f docker-compose.evolution.yml logs -f evolution-api"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "concurrently": "^9.0.0",
+    "effect": "^3.22.0",
     "eslint": "^9.0.0",
     "fast-check": "^4.9.0",
     "prettier": "^3.0.0",

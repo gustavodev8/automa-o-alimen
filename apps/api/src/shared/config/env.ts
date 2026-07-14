@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -10,6 +11,7 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   EVOLUTION_API_URL: z.string().url().optional(),
   EVOLUTION_API_KEY: z.string().optional(),
+  EVOLUTION_INSTANCE_NAME: z.string().default('lanchonete'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   LOG_LEVEL: z.string().default('info'),
 });
