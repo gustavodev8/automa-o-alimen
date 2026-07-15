@@ -6,6 +6,24 @@ export interface EvolutionTextMessage {
   text: string;
 }
 
+export interface EvolutionConnectionState {
+  instanceName: string;
+  state: string;
+}
+
+export interface EvolutionConnectionQrCode {
+  pairingCode: string | null;
+  code: string | null;
+  base64: string | null;
+  count?: number | null;
+}
+
+export interface EvolutionConnectionInfo {
+  instanceName: string;
+  state: string;
+  qrCode: EvolutionConnectionQrCode | null;
+}
+
 export class EvolutionService {
   private get baseUrl() {
     if (!env.EVOLUTION_API_URL) {
@@ -17,17 +35,101 @@ export class EvolutionService {
 
   private get headers() {
     return {
-      'Content-Type': 'application/json',
       ...(env.EVOLUTION_API_KEY ? { apikey: env.EVOLUTION_API_KEY } : {}),
     };
   }
 
+  private async requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const isFormData = init.body instanceof FormData;
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      ...init,
+      headers: {
+        ...this.headers,
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(init.headers ?? {}),
+      },
+    });
+
+    const responseBody = await response.text();
+    let parsedBody: T;
+
+    try {
+      parsedBody = responseBody ? (JSON.parse(responseBody) as T) : (null as T);
+    } catch {
+      parsedBody = responseBody as T;
+    }
+
+    if (!response.ok) {
+      throw new AppError('Evolution API request failed', 502, 'EVOLUTION_REQUEST_FAILED', {
+        status: response.status,
+        body: responseBody,
+      });
+    }
+
+    return parsedBody;
+  }
+
+  async ensureInstance() {
+    return this.requestJson<EvolutionConnectionState>('/instance/create', {
+      method: 'POST',
+      body: JSON.stringify({
+        instanceName: env.EVOLUTION_INSTANCE_NAME,
+        qrcode: true,
+        integration: 'WHATSAPP-BAILEYS',
+      }),
+    });
+  }
+
+  async getConnectionState() {
+    const response = await this.requestJson<{ instance?: EvolutionConnectionState }>(
+      `/instance/connectionState/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
+    );
+
+    return response.instance ?? {
+      instanceName: env.EVOLUTION_INSTANCE_NAME,
+      state: 'unknown',
+    };
+  }
+
+  async getConnectionQrCode() {
+    return this.requestJson<EvolutionConnectionQrCode>(
+      `/instance/connect/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
+    );
+  }
+
+  async getConnectionInfo(): Promise<EvolutionConnectionInfo> {
+    let state = await this.getConnectionState().catch(async () => {
+      await this.ensureInstance();
+      return this.getConnectionState();
+    });
+
+    if (state.state !== 'open') {
+      const qrCode = await this.getConnectionQrCode().catch(async () => {
+        await this.ensureInstance();
+        return this.getConnectionQrCode();
+      });
+
+      state = await this.getConnectionState().catch(() => state);
+
+      return {
+        instanceName: state.instanceName,
+        state: state.state,
+        qrCode,
+      };
+    }
+
+    return {
+      instanceName: state.instanceName,
+      state: state.state,
+      qrCode: null,
+    };
+  }
+
   async sendTextMessage(message: EvolutionTextMessage) {
-    const response = await fetch(
-      `${this.baseUrl}/message/sendText/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
+    return this.requestJson(
+      `/message/sendText/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
       {
         method: 'POST',
-        headers: this.headers,
         body: JSON.stringify({
           number: message.to,
           text: message.text,
@@ -37,21 +139,10 @@ export class EvolutionService {
         }),
       },
     );
-
-    if (!response.ok) {
-      const responseBody = await response.text();
-      throw new AppError('Evolution API request failed', 502, 'EVOLUTION_REQUEST_FAILED', {
-        status: response.status,
-        body: responseBody,
-      });
-    }
-
-    return response.json();
   }
 
   async sendImage(to: string, imageUrl: string, caption?: string) {
     const form = new FormData();
-    const headers = env.EVOLUTION_API_KEY ? { apikey: env.EVOLUTION_API_KEY } : {};
 
     form.append('number', to);
     form.append('mediatype', 'image');
@@ -61,23 +152,12 @@ export class EvolutionService {
       form.append('caption', caption);
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/message/sendMedia/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
+    return this.requestJson(
+      `/message/sendMedia/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
       {
         method: 'POST',
-        headers,
         body: form,
       },
     );
-
-    if (!response.ok) {
-      const responseBody = await response.text();
-      throw new AppError('Evolution API request failed', 502, 'EVOLUTION_REQUEST_FAILED', {
-        status: response.status,
-        body: responseBody,
-      });
-    }
-
-    return response.json();
   }
 }

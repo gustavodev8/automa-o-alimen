@@ -66,6 +66,39 @@ Depois:
 
 A webhook global ja vem apontada para a API local em `http://host.docker.internal:3001/api/v1/webhooks/evolution/webhook`, entao nao precisa de VPS nem de tunel publico nessa fase. A Evolution local sobe em `http://localhost:8081`.
 
+## Respostas automaticas com IA
+
+Quando uma mensagem de texto chega pelo WhatsApp, a API salva a conversa, consulta a IA configurada e envia a resposta de volta pela Evolution.
+
+Para usar a IA do GitHub Models, deixe assim no `.env` e em `apps/api/.env`:
+
+```env
+AI_PROVIDER=github
+AI_API_KEY=cole_sua_chave_aqui
+AI_MODEL=azure-openai/gpt-4-1-mini
+AI_AUTO_REPLY_ENABLED=true
+```
+
+Para usar Gemini:
+
+```env
+AI_PROVIDER=gemini
+AI_API_KEY=cole_sua_chave_aqui
+AI_MODEL=gemini-1.5-flash
+AI_AUTO_REPLY_ENABLED=true
+```
+
+Para usar OpenAI direto:
+
+```env
+AI_PROVIDER=openai
+AI_API_KEY=cole_sua_chave_aqui
+AI_MODEL=gpt-4o-mini
+AI_AUTO_REPLY_ENABLED=true
+```
+
+Depois de trocar a chave ou o provedor, reinicie a API com `npm run dev`. Se `AI_API_KEY` estiver vazia, as mensagens recebidas continuam sendo salvas no banco, mas o bot nao responde automaticamente.
+
 ## Acesso inicial
 
 - Painel web: `http://localhost:3000`
@@ -115,5 +148,5 @@ O backend foi organizado em camadas:
 - Painel de cozinha
 - Dashboard resumido
 - Webhook inicial da Evolution
-- Service de IA preparado para OpenAI
+- Resposta automatica por IA via GitHub Models, Gemini ou OpenAI
 - Estrutura pronta para gateways de pagamento

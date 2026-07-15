@@ -2,9 +2,13 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../infrastructure/database/prisma/client.js';
 import { logger } from '../../../infrastructure/logger/pino.js';
+import { AIService } from '../../ai/services/ai.service.js';
 import { ConversationService } from '../../conversations/services/conversation.service.js';
+import { EvolutionService } from '../services/evolution.service.js';
 
 const conversationService = new ConversationService();
+const aiService = new AIService();
+const evolutionService = new EvolutionService();
 
 type WebhookPayload = Record<string, unknown>;
 type InboundMessageType = 'TEXT' | 'AUDIO' | 'IMAGE' | 'DOCUMENT' | 'LOCATION' | 'STATUS' | 'SYSTEM';
@@ -180,6 +184,16 @@ export async function evolutionWebhookController(request: FastifyRequest, reply:
       },
     });
 
+    if (messageType === 'TEXT' && messageText) {
+      await answerWithAI({
+        conversationId: conversation.id,
+        customerId: customer.id,
+        customerName: customer.nome,
+        customerPhone: customer.telefone,
+        messageText,
+      });
+    }
+
     return reply.send({ ok: true });
   } catch (error) {
     logger.error(
@@ -195,5 +209,100 @@ export async function evolutionWebhookController(request: FastifyRequest, reply:
       error: 'EVOLUTION_WEBHOOK_FAILED',
       message: error instanceof Error ? error.message : 'Unexpected webhook failure',
     });
+  }
+}
+
+async function answerWithAI(input: {
+  conversationId: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  messageText: string;
+}) {
+  if (!aiService.isAutoReplyReady()) {
+    logger.info(
+      {
+        provider: 'ai',
+        conversationId: input.conversationId,
+      },
+      'AI auto reply is not configured; inbound message was stored only',
+    );
+    return;
+  }
+
+  try {
+    const [recentMessages, products] = await Promise.all([
+      prisma.mensagem.findMany({
+        where: {
+          conversaId: input.conversationId,
+          conteudo: {
+            not: null,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.produto.findMany({
+        where: {
+          ativo: true,
+        },
+        include: {
+          categoria: true,
+        },
+        orderBy: [{ ordemExibicao: 'asc' }, { nome: 'asc' }],
+        take: 50,
+      }),
+    ]);
+
+    const answer = await aiService.answerCustomerMessage({
+      customerName: input.customerName,
+      customerPhone: input.customerPhone,
+      message: input.messageText,
+      history: recentMessages
+        .reverse()
+        .filter((message) => message.conteudo)
+        .map((message) => ({
+          role: message.direcao === 'OUTBOUND' ? 'assistant' : 'user',
+          content: message.conteudo ?? '',
+        })),
+      catalog: products.map((product) => ({
+        name: product.nome,
+        category: product.categoria.nome,
+        price: Number(product.preco),
+        description: product.descricao,
+        stock: product.estoque,
+      })),
+    });
+
+    if (!answer.trim()) {
+      return;
+    }
+
+    await evolutionService.sendTextMessage({
+      to: input.customerPhone,
+      text: answer,
+    });
+
+    await prisma.mensagem.create({
+      data: {
+        conversaId: input.conversationId,
+        clienteId: input.customerId,
+        direcao: 'OUTBOUND',
+        tipo: 'TEXT',
+        conteudo: answer,
+        rawPayload: {
+          source: 'ai-auto-reply',
+        } as Prisma.InputJsonValue,
+      },
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        conversationId: input.conversationId,
+        customerPhone: input.customerPhone,
+        error,
+      },
+      'Failed to send AI auto reply',
+    );
   }
 }
